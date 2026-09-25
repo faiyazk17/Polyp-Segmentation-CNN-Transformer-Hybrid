@@ -1,0 +1,4 @@
+# Model weights
+*.pth
+*.pt
+*.ckpt

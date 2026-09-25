@@ -1,0 +1,13 @@
+name: pranet
+
+channels:
+  - pytorch
+  - defaults
+
+dependencies:
+  - python=3.6
+  - pytorch=1.1
+  - torchvision
+  - pip
+  - scipy
+  - pillow
