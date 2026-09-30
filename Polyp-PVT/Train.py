@@ -12,8 +12,11 @@ import logging
 
 import matplotlib.pyplot as plt
 
+
 def structure_loss(pred, mask):
-    weit = 1 + 5 * torch.abs(F.avg_pool2d(mask, kernel_size=31, stride=1, padding=15) - mask)
+    weit = 1 + 5 * \
+        torch.abs(F.avg_pool2d(mask, kernel_size=31,
+                  stride=1, padding=15) - mask)
     wbce = F.binary_cross_entropy_with_logits(pred, mask, reduce='none')
     wbce = (weit * wbce).sum(dim=(2, 3)) / weit.sum(dim=(2, 3))
 
@@ -40,9 +43,10 @@ def test(model, path, dataset):
         gt /= (gt.max() + 1e-8)
         image = image.cuda()
 
-        res, res1  = model(image)
+        res, res1 = model(image)
         # eval Dice
-        res = F.upsample(res + res1 , size=gt.shape, mode='bilinear', align_corners=False)
+        res = F.upsample(res + res1, size=gt.shape,
+                         mode='bilinear', align_corners=False)
         res = res.sigmoid().data.cpu().numpy().squeeze()
         res = (res - res.min()) / (res.max() - res.min() + 1e-8)
         input = res
@@ -52,7 +56,8 @@ def test(model, path, dataset):
         input_flat = np.reshape(input, (-1))
         target_flat = np.reshape(target, (-1))
         intersection = (input_flat * target_flat)
-        dice = (2 * intersection.sum() + smooth) / (input.sum() + target.sum() + smooth)
+        dice = (2 * intersection.sum() + smooth) / \
+            (input.sum() + target.sum() + smooth)
         dice = '{:.4f}'.format(dice)
         dice = float(dice)
         DSC = DSC + dice
@@ -60,11 +65,10 @@ def test(model, path, dataset):
     return DSC / num1
 
 
-
 def train(train_loader, model, optimizer, epoch, test_path):
     model.train()
     global best
-    size_rates = [0.75, 1, 1.25] 
+    size_rates = [0.75, 1, 1.25]
     loss_P2_record = AvgMeter()
     for i, pack in enumerate(train_loader, start=1):
         for rate in size_rates:
@@ -76,14 +80,16 @@ def train(train_loader, model, optimizer, epoch, test_path):
             # ---- rescale ----
             trainsize = int(round(opt.trainsize * rate / 32) * 32)
             if rate != 1:
-                images = F.upsample(images, size=(trainsize, trainsize), mode='bilinear', align_corners=True)
-                gts = F.upsample(gts, size=(trainsize, trainsize), mode='bilinear', align_corners=True)
+                images = F.upsample(images, size=(
+                    trainsize, trainsize), mode='bilinear', align_corners=True)
+                gts = F.upsample(gts, size=(trainsize, trainsize),
+                                 mode='bilinear', align_corners=True)
             # ---- forward ----
-            P1, P2= model(images)
+            P1, P2 = model(images)
             # ---- loss function ----
             loss_P1 = structure_loss(P1, gts)
             loss_P2 = structure_loss(P2, gts)
-            loss = loss_P1 + loss_P2 
+            loss = loss_P1 + loss_P2
             # ---- backward ----
             loss.backward()
             clip_gradient(optimizer, opt.clip)
@@ -97,20 +103,21 @@ def train(train_loader, model, optimizer, epoch, test_path):
                   ' lateral-5: {:0.4f}]'.
                   format(datetime.now(), epoch, opt.epoch, i, total_step,
                          loss_P2_record.show()))
-    # save model 
+    # save model
     save_path = (opt.train_save)
     if not os.path.exists(save_path):
         os.makedirs(save_path)
-    torch.save(model.state_dict(), save_path +str(epoch)+ 'PolypPVT.pth')
+    torch.save(model.state_dict(), save_path + str(epoch) + 'PolypPVT.pth')
     # choose the best model
 
     global dict_plot
-   
+
     test1path = '../datasets/TestDataset/'
     if (epoch + 1) % 1 == 0:
         for dataset in ['CVC-300', 'CVC-ClinicDB', 'Kvasir', 'CVC-ColonDB', 'ETIS-LaribPolypDB']:
             dataset_dice = test(model, test1path, dataset)
-            logging.info('epoch: {}, dataset: {}, dice: {}'.format(epoch, dataset, dataset_dice))
+            logging.info('epoch: {}, dataset: {}, dice: {}'.format(
+                epoch, dataset, dataset_dice))
             print(dataset, ': ', dataset_dice)
             dict_plot[dataset].append(dataset_dice)
         meandice = test(model, test_path, 'test')
@@ -118,17 +125,22 @@ def train(train_loader, model, optimizer, epoch, test_path):
         if meandice > best:
             best = meandice
             torch.save(model.state_dict(), save_path + 'PolypPVT.pth')
-            torch.save(model.state_dict(), save_path +str(epoch)+ 'PolypPVT-best.pth')
-            print('##############################################################################best', best)
-            logging.info('##############################################################################best:{}'.format(best))
+            torch.save(model.state_dict(), save_path +
+                       str(epoch) + 'PolypPVT-best.pth')
+            print(
+                '##############################################################################best', best)
+            logging.info(
+                '##############################################################################best:{}'.format(best))
 
 
-def plot_train(dict_plot=None, name = None):
+def plot_train(dict_plot=None, name=None):
     color = ['red', 'lawngreen', 'lime', 'gold', 'm', 'plum', 'blue']
     line = ['-', "--"]
     for i in range(len(name)):
-        plt.plot(dict_plot[name[i]], label=name[i], color=color[i], linestyle=line[(i + 1) % 2])
-        transfuse = {'CVC-300': 0.902, 'CVC-ClinicDB': 0.918, 'Kvasir': 0.918, 'CVC-ColonDB': 0.773,'ETIS-LaribPolypDB': 0.733, 'test':0.83}
+        plt.plot(dict_plot[name[i]], label=name[i],
+                 color=color[i], linestyle=line[(i + 1) % 2])
+        transfuse = {'CVC-300': 0.902, 'CVC-ClinicDB': 0.918, 'Kvasir': 0.918,
+                     'CVC-ColonDB': 0.773, 'ETIS-LaribPolypDB': 0.733, 'test': 0.83}
         plt.axhline(y=transfuse[name[i]], color=color[i], linestyle='-')
     plt.xlabel("epoch")
     plt.ylabel("dice")
@@ -136,12 +148,14 @@ def plot_train(dict_plot=None, name = None):
     plt.legend()
     plt.savefig('eval.png')
     # plt.show()
-    
-    
+
+
 if __name__ == '__main__':
-    dict_plot = {'CVC-300':[], 'CVC-ClinicDB':[], 'Kvasir':[], 'CVC-ColonDB':[], 'ETIS-LaribPolypDB':[], 'test':[]}
-    name = ['CVC-300', 'CVC-ClinicDB', 'Kvasir', 'CVC-ColonDB', 'ETIS-LaribPolypDB', 'test']
-    ##################model_name#############################
+    dict_plot = {'CVC-300': [], 'CVC-ClinicDB': [], 'Kvasir': [],
+                 'CVC-ColonDB': [], 'ETIS-LaribPolypDB': [], 'test': []}
+    name = ['CVC-300', 'CVC-ClinicDB', 'Kvasir',
+            'CVC-ColonDB', 'ETIS-LaribPolypDB', 'test']
+    ################## model_name#############################
     model_name = 'PolypPVT'
     ###############################################
     parser = argparse.ArgumentParser()
@@ -174,11 +188,11 @@ if __name__ == '__main__':
                         default=50, help='every n epochs decay learning rate')
 
     parser.add_argument('--train_path', type=str,
-                        default='../dataset/TrainDataset/',
+                        default='../datasets/TrainDataset/',
                         help='path to train dataset')
 
     parser.add_argument('--test_path', type=str,
-                        default='../dataset/TestDataset/',
+                        default='../datasets/TestDataset/',
                         help='path to testing Kvasir dataset')
 
     parser.add_argument('--train_save', type=str,
@@ -200,7 +214,8 @@ if __name__ == '__main__':
     if opt.optimizer == 'AdamW':
         optimizer = torch.optim.AdamW(params, opt.lr, weight_decay=1e-4)
     else:
-        optimizer = torch.optim.SGD(params, opt.lr, weight_decay=1e-4, momentum=0.9)
+        optimizer = torch.optim.SGD(
+            params, opt.lr, weight_decay=1e-4, momentum=0.9)
 
     print(optimizer)
     image_root = '{}/images/'.format(opt.train_path)
@@ -215,6 +230,6 @@ if __name__ == '__main__':
     for epoch in range(1, opt.epoch):
         adjust_lr(optimizer, opt.lr, epoch, 0.1, 200)
         train(train_loader, model, optimizer, epoch, opt.test_path)
-    
+
     # plot the eval.png in the training stage
     # plot_train(dict_plot, name)
