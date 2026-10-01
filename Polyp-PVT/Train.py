@@ -120,8 +120,10 @@ def train(train_loader, model, optimizer, epoch, test_path):
                 epoch, dataset, dataset_dice))
             print(dataset, ': ', dataset_dice)
             dict_plot[dataset].append(dataset_dice)
-        meandice = test(model, test_path, 'test')
+        meandice = (dict_plot['Kvasir'][-1] +
+                    dict_plot['CVC-ClinicDB'][-1]) / 2.0
         dict_plot['test'].append(meandice)
+        print('in-domain mean (Kvasir+ClinicDB):', meandice)
         if meandice > best:
             best = meandice
             torch.save(model.state_dict(), save_path + 'PolypPVT.pth')
