@@ -2,6 +2,7 @@ import torch
 from torch.autograd import Variable
 import os
 import argparse
+import random
 from datetime import datetime
 from lib.pvt import PolypPVT
 from utils.dataloader import get_loader, test_dataset
@@ -200,7 +201,19 @@ if __name__ == '__main__':
     parser.add_argument('--train_save', type=str,
                         default='./model_pth/'+model_name+'/')
 
+    parser.add_argument('--seed', type=int,
+                        default=0, help='random seed')
+
     opt = parser.parse_args()
+
+    random.seed(opt.seed)
+    np.random.seed(opt.seed)
+    torch.manual_seed(opt.seed)
+    torch.cuda.manual_seed_all(opt.seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    print('seed:', opt.seed)
+
     logging.basicConfig(filename='train_log.log',
                         format='[%(asctime)s-%(filename)s-%(levelname)s:%(message)s]',
                         level=logging.INFO, filemode='a', datefmt='%Y-%m-%d %I:%M:%S %p')
