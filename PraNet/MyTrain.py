@@ -2,11 +2,13 @@ import torch
 from torch.autograd import Variable
 import os
 import argparse
+import random
 from datetime import datetime
 from lib.PraNet_Res2Net import PraNet
 from utils.dataloader import get_loader
 from utils.utils import clip_gradient, adjust_lr, AvgMeter
 import torch.nn.functional as F
+import numpy as np
 
 
 def structure_loss(pred, mask):
@@ -89,7 +91,17 @@ if __name__ == '__main__':
                         default='../datasets/TrainDataset', help='path to train dataset')
     parser.add_argument('--train_save', type=str,
                         default='PraNet_Res2Net')
+    parser.add_argument('--seed', type=int,
+                        default=0, help='random seed')
     opt = parser.parse_args()
+
+    random.seed(opt.seed)
+    np.random.seed(opt.seed)
+    torch.manual_seed(opt.seed)
+    torch.cuda.manual_seed_all(opt.seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    print('seed:', opt.seed)
 
     # ---- build models ----
     # torch.cuda.set_device(0)  # set your gpu device
