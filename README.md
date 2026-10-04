@@ -1,5 +1,5 @@
 # Polyp-Segmentation-CNN-Transformer-Hybrid
-Automatic polyp segmentation in colonoscopy frames is critical for computer-aided diagnosis. PraNet and Polyp-PVT combine reversed-attention mechanisms and pyramid vision Transformers. Students reproduce results, analyse cross-dataset generalisation, and propose a data-efficient semi-supervised extension.
+Automatic polyp segmentation in colonoscopy frames is critical for computer-aided diagnosis. PraNet and Polyp-PVT combine reversed-attention mechanisms and pyramid vision Transformers. Project reproduces results, analyses cross-dataset generalisation, and proposes a data-efficient semi-supervised extension.
 
 # Overleaf LaTeX Project Proposal File Link:
 https://www.overleaf.com/1912964444cnxbfnkbppqg#a4a783
