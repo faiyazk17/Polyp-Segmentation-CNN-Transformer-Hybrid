@@ -96,31 +96,42 @@ def _clear_lib_imports():
 
 def load_model(model_name, pth_path):
     repo = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    pth_path = pth_path if os.path.isabs(pth_path) else os.path.join(repo, pth_path)
     _clear_lib_imports()
     # Keep only one model package root on path at a time
     sys.path = [p for p in sys.path if not p.endswith('Polyp-PVT') and not p.endswith('PraNet')]
 
-    if model_name == 'polyp_pvt':
-        sys.path.insert(0, os.path.join(repo, 'Polyp-PVT'))
-        from lib.pvt import PolypPVT
-        model = PolypPVT().cuda()
-        model.load_state_dict(torch.load(pth_path, map_location='cuda'))
-    elif model_name == 'pranet':
-        sys.path.insert(0, os.path.join(repo, 'PraNet'))
-        from lib.PraNet_Res2Net import PraNet
-        model = PraNet().cuda()
-        model.load_state_dict(torch.load(pth_path, map_location='cuda'))
-    elif model_name == 'unet':
-        import segmentation_models_pytorch as smp
-        model = smp.Unet(
-            encoder_name='efficientnet-b0',
-            encoder_weights=None,
-            in_channels=3,
-            classes=1,
-        ).cuda()
-        model.load_state_dict(torch.load(pth_path, map_location='cuda'))
-    else:
-        raise ValueError(model_name)
+    # Polyp-PVT / PraNet constructors load backbones via paths relative to CWD
+    prev_cwd = os.getcwd()
+    try:
+        if model_name == 'polyp_pvt':
+            model_dir = os.path.join(repo, 'Polyp-PVT')
+            sys.path.insert(0, model_dir)
+            os.chdir(model_dir)
+            from lib.pvt import PolypPVT
+            model = PolypPVT().cuda()
+            model.load_state_dict(torch.load(pth_path, map_location='cuda'))
+        elif model_name == 'pranet':
+            model_dir = os.path.join(repo, 'PraNet')
+            sys.path.insert(0, model_dir)
+            os.chdir(model_dir)
+            from lib.PraNet_Res2Net import PraNet
+            model = PraNet().cuda()
+            model.load_state_dict(torch.load(pth_path, map_location='cuda'))
+        elif model_name == 'unet':
+            import segmentation_models_pytorch as smp
+            model = smp.Unet(
+                encoder_name='efficientnet-b0',
+                encoder_weights=None,
+                in_channels=3,
+                classes=1,
+            ).cuda()
+            model.load_state_dict(torch.load(pth_path, map_location='cuda'))
+        else:
+            raise ValueError(model_name)
+    finally:
+        os.chdir(prev_cwd)
+
     model.eval()
     return model
 
@@ -142,6 +153,9 @@ def predict(model, model_name, image, gt_shape):
 
 
 def eval_checkpoint(model_name, pth_path, test_root, testsize=352):
+    repo = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    if not os.path.isabs(test_root):
+        test_root = os.path.join(repo, test_root)
     model = load_model(model_name, pth_path)
     rows = []
     for name in DATASETS:
