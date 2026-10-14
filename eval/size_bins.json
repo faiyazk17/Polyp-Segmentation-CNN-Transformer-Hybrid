@@ -1,0 +1,10 @@
+{
+  "rule": "polyp_area = foreground pixels (mask > 0); threshold = median area on TrainDataset",
+  "train_mask_dir": "datasets/TrainDataset/masks",
+  "n_train_masks": 1450,
+  "median_threshold": 20957,
+  "small": "polyp_area <= 20957",
+  "large": "polyp_area > 20957",
+  "n_small_train": 725,
+  "n_large_train": 725
+}
