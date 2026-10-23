@@ -5,3 +5,4 @@ __pycache__/
 *.pth
 *.pt
 *.ckpt
+qual_weights.tar.gz
