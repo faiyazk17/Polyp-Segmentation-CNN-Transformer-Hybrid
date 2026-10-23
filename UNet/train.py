@@ -10,7 +10,7 @@ import segmentation_models_pytorch as smp
 import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from PIL import Image
 import torchvision.transforms as transforms
 
@@ -44,6 +44,14 @@ class TrainDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.images)
+
+    def small_mask_flags(self, threshold):
+        """True when the raw mask has polyp_area <= threshold."""
+        flags = []
+        for path in self.gts:
+            mask = np.array(Image.open(path).convert('L'))
+            flags.append(int((mask > 0).sum()) <= threshold)
+        return flags
 
 
 class TestDataset:
@@ -150,6 +158,12 @@ if __name__ == '__main__':
     parser.add_argument('--train_path', type=str, default='../datasets/TrainDataset')
     parser.add_argument('--test_path', type=str, default='../datasets/TestDataset')
     parser.add_argument('--save_dir', type=str, default='./runs')
+    parser.add_argument('--oversample_small', action='store_true',
+                        help='draw small-polyp images more often (component C1 only)')
+    parser.add_argument('--small_threshold', type=int, default=20957,
+                        help='polyp_area <= this counts as small')
+    parser.add_argument('--small_weight', type=float, default=3.0,
+                        help='sampling weight for small images; large images stay at 1')
     opt = parser.parse_args()
 
     random.seed(opt.seed)
@@ -184,8 +198,18 @@ if __name__ == '__main__':
         os.path.join(opt.train_path, 'masks'),
         opt.trainsize,
     )
+    sampler = None
+    shuffle = True
+    if opt.oversample_small:
+        flags = train_set.small_mask_flags(opt.small_threshold)
+        weights = [opt.small_weight if is_small else 1.0 for is_small in flags]
+        sampler = WeightedRandomSampler(weights, num_samples=len(weights), replacement=True)
+        shuffle = False
+        n_small = sum(flags)
+        print(f'oversample_small: threshold={opt.small_threshold} '
+              f'small_weight={opt.small_weight} n_small={n_small} n_large={len(flags) - n_small}')
     train_loader = DataLoader(
-        train_set, batch_size=opt.batchsize, shuffle=True,
+        train_set, batch_size=opt.batchsize, shuffle=shuffle, sampler=sampler,
         num_workers=4, pin_memory=True,
     )
 
