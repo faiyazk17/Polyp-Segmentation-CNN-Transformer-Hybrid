@@ -6,6 +6,10 @@ Teacher: EMA of the student (no gradients). Consistency: MSE on sigmoid
 outputs under two independently flipped views. Consistency weight ramps up
 over the first ramp_epochs.
 
+Optional --mc_dropout (C3): T stochastic teacher forwards with dropout on;
+per-pixel variance; drop the top uncertainty_drop_frac of pixels from the
+consistency loss. Everything else matches plain mean teacher so C3 is alone.
+
 Once ColonDB is used this way, it is no longer an unseen test set for these runs.
 """
 import argparse
@@ -72,10 +76,45 @@ def consistency_weight(epoch, ramp_epochs, max_weight):
     return max_weight * min(1.0, float(epoch) / float(ramp_epochs))
 
 
+@torch.no_grad()
+def teacher_mc_predict(teacher, images, t_samples):
+    """T stochastic teacher passes. Returns mean and variance of sigmoid maps."""
+    preds = []
+    for _ in range(t_samples):
+        preds.append(torch.sigmoid(teacher(images)))
+    stack = torch.stack(preds, dim=0)
+    mean = stack.mean(dim=0)
+    var = stack.var(dim=0, unbiased=False)
+    return mean, var
+
+
+def consistency_loss(pred_s_logits, teacher, view_t, opt):
+    """MSE vs teacher. With --mc_dropout, drop high-variance teacher pixels."""
+    pred_s = torch.sigmoid(pred_s_logits)
+    if not opt.mc_dropout:
+        with torch.no_grad():
+            pred_t = torch.sigmoid(teacher(view_t))
+        return F.mse_loss(pred_s, pred_t)
+
+    mean_t, var_t = teacher_mc_predict(teacher, view_t, opt.mc_T)
+    # Drop the most uncertain fraction of pixels (batch-wide quantile).
+    keep_frac = 1.0 - opt.uncertainty_drop_frac
+    if keep_frac >= 1.0:
+        mask = torch.ones_like(var_t)
+    elif keep_frac <= 0.0:
+        mask = torch.zeros_like(var_t)
+    else:
+        thresh = torch.quantile(var_t.flatten(), keep_frac)
+        mask = (var_t <= thresh).float()
+    denom = mask.sum().clamp_min(1.0)
+    return ((pred_s - mean_t).pow(2) * mask).sum() / denom
+
+
 def train_one_epoch(student, teacher, labeled_loader, unlabeled_loader,
                     optimizer, epoch, opt):
     student.train()
-    teacher.train()  # dropout/bn train mode; no grads on teacher
+    # Teacher stays in train() so dropout is active for MC Dropout passes.
+    teacher.train()
     for p in teacher.parameters():
         p.requires_grad_(False)
 
@@ -116,9 +155,7 @@ def train_one_epoch(student, teacher, labeled_loader, unlabeled_loader,
             loss_l = structure_loss(pred_l, gts_g)
 
             pred_s = student(view_s_g)
-            with torch.no_grad():
-                pred_t = teacher(view_t_g)
-            loss_c = F.mse_loss(torch.sigmoid(pred_s), torch.sigmoid(pred_t))
+            loss_c = consistency_loss(pred_s, teacher, view_t_g, opt)
 
             loss = loss_l + w_cons * loss_c
             loss.backward()
@@ -159,6 +196,12 @@ if __name__ == '__main__':
     parser.add_argument('--consistency_weight', type=float, default=0.1)
     parser.add_argument('--ramp_epochs', type=int, default=5,
                         help='epochs to ramp consistency weight from 0 to max')
+    parser.add_argument('--mc_dropout', action='store_true',
+                        help='C3: filter consistency by teacher MC Dropout variance')
+    parser.add_argument('--mc_T', type=int, default=10,
+                        help='number of stochastic teacher passes')
+    parser.add_argument('--uncertainty_drop_frac', type=float, default=0.5,
+                        help='fraction of highest-variance teacher pixels to drop')
     opt = parser.parse_args()
 
     random.seed(opt.seed)
@@ -171,6 +214,9 @@ if __name__ == '__main__':
     print('ema_decay:', opt.ema_decay,
           'consistency_weight:', opt.consistency_weight,
           'ramp_epochs:', opt.ramp_epochs)
+    print('mc_dropout:', opt.mc_dropout,
+          'mc_T:', opt.mc_T,
+          'uncertainty_drop_frac:', opt.uncertainty_drop_frac)
     print('unlabeled_path:', opt.unlabeled_path)
     print('NOTE: CVC-ColonDB is used unlabeled; treat it as seen for these runs.')
 
@@ -195,6 +241,8 @@ if __name__ == '__main__':
 
     n_params = sum(p.numel() for p in student.parameters()) / 1e6
     print(f'params (M): {n_params:.3f}')
+    n_drop = sum(1 for m in student.modules() if isinstance(m, torch.nn.Dropout))
+    print(f'dropout_modules: {n_drop}')
 
     optimizer = torch.optim.AdamW(student.parameters(), lr=opt.lr, weight_decay=1e-4)
 
@@ -218,7 +266,8 @@ if __name__ == '__main__':
     # ColonDB is seen (unlabeled) for these runs; still log its Dice for the report.
     datasets = ['CVC-300', 'CVC-ClinicDB', 'Kvasir', 'CVC-ColonDB', 'ETIS-LaribPolypDB']
     best = 0.0
-    print('#' * 20, 'Start Mean-Teacher Training', '#' * 20)
+    title = 'Start Mean-Teacher + MC Dropout' if opt.mc_dropout else 'Start Mean-Teacher Training'
+    print('#' * 20, title, '#' * 20)
 
     for epoch in range(1, opt.epoch + 1):
         train_one_epoch(
@@ -242,3 +291,4 @@ if __name__ == '__main__':
             logging.info('best: %s', best)
 
     print('done. best in-domain mean:', best)
+
