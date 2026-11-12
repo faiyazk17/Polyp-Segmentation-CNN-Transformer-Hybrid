@@ -1,0 +1,16 @@
+model,seed,threshold,dataset,n_all,n_small,n_large,dice_all,dice_small,dice_large
+unet_oversample,0,20957,CVC-300,60,57,3,0.8894,0.8858,0.9582
+unet_oversample,0,20957,CVC-ClinicDB,62,54,8,0.9218,0.9156,0.9639
+unet_oversample,0,20957,Kvasir,100,32,68,0.9040,0.8727,0.9188
+unet_oversample,0,20957,CVC-ColonDB,380,278,102,0.7329,0.7385,0.7177
+unet_oversample,0,20957,ETIS-LaribPolypDB,196,87,109,0.7025,0.5865,0.7950
+unet_oversample,1,20957,CVC-300,60,57,3,0.8782,0.8744,0.9512
+unet_oversample,1,20957,CVC-ClinicDB,62,54,8,0.9279,0.9246,0.9503
+unet_oversample,1,20957,Kvasir,100,32,68,0.9103,0.8942,0.9178
+unet_oversample,1,20957,CVC-ColonDB,380,278,102,0.7452,0.7722,0.6718
+unet_oversample,1,20957,ETIS-LaribPolypDB,196,87,109,0.7000,0.5538,0.8168
+unet_oversample,2,20957,CVC-300,60,57,3,0.8882,0.8845,0.9580
+unet_oversample,2,20957,CVC-ClinicDB,62,54,8,0.9308,0.9267,0.9582
+unet_oversample,2,20957,Kvasir,100,32,68,0.9055,0.8851,0.9150
+unet_oversample,2,20957,CVC-ColonDB,380,278,102,0.7473,0.7436,0.7575
+unet_oversample,2,20957,ETIS-LaribPolypDB,196,87,109,0.6906,0.5629,0.7926
