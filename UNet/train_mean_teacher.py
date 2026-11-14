@@ -1,7 +1,11 @@
 """Mean teacher (C2) on top of the U-Net + EfficientNet-B0 baseline.
 
 Labeled loss: same structure loss as train.py on the mixed TrainDataset.
-Unlabeled pool: CVC-ColonDB images only; masks are never read.
+Unlabeled pool (choose with --unlabeled_mode):
+  - colondb: CVC-ColonDB images only; masks are never read. ColonDB becomes seen.
+  - indomain: seed-wise split of TrainDataset; labeled_frac keeps masks, the rest
+    are unlabeled (masks ignored). ColonDB stays a held-out test set.
+
 Teacher: EMA of the student (no gradients). Consistency: MSE on sigmoid
 outputs under two independently flipped views. Consistency weight ramps up
 over the first ramp_epochs.
@@ -9,8 +13,6 @@ over the first ramp_epochs.
 Optional --mc_dropout (C3): T stochastic teacher forwards with dropout on;
 per-pixel variance; drop the top uncertainty_drop_frac of pixels from the
 consistency loss. Everything else matches plain mean teacher so C3 is alone.
-
-Once ColonDB is used this way, it is no longer an unseen test set for these runs.
 """
 import argparse
 import copy
@@ -23,7 +25,7 @@ import numpy as np
 import segmentation_models_pytorch as smp
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Subset
 from PIL import Image
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as TF
@@ -34,14 +36,19 @@ from train import TrainDataset, structure_loss, eval_dice
 class UnlabeledImageDataset(Dataset):
     """Images only. Masks on disk are ignored."""
 
-    def __init__(self, image_root, trainsize=352):
+    def __init__(self, image_root=None, trainsize=352, image_paths=None):
         self.trainsize = trainsize
-        self.images = sorted(
-            [os.path.join(image_root, f) for f in os.listdir(image_root)
-             if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
-        )
+        if image_paths is not None:
+            self.images = list(image_paths)
+        else:
+            if image_root is None:
+                raise ValueError('provide image_root or image_paths')
+            self.images = sorted(
+                [os.path.join(image_root, f) for f in os.listdir(image_root)
+                 if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
+            )
         if len(self.images) == 0:
-            raise FileNotFoundError(f'no images in {image_root}')
+            raise FileNotFoundError('no unlabeled images')
         self.to_tensor = transforms.Compose([
             transforms.Resize((trainsize, trainsize)),
             transforms.ToTensor(),
@@ -188,10 +195,16 @@ if __name__ == '__main__':
     parser.add_argument('--clip', type=float, default=0.5)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--train_path', type=str, default='../datasets/TrainDataset')
+    parser.add_argument('--unlabeled_mode', type=str, default='indomain',
+                        choices=['indomain', 'colondb'],
+                        help='indomain: split TrainDataset; colondb: external ColonDB pool')
+    parser.add_argument('--labeled_frac', type=float, default=0.5,
+                        help='fraction of TrainDataset kept labeled (indomain mode)')
     parser.add_argument('--unlabeled_path', type=str,
-                        default='../datasets/TestDataset/CVC-ColonDB/images')
+                        default='../datasets/TestDataset/CVC-ColonDB/images',
+                        help='used only when --unlabeled_mode colondb')
     parser.add_argument('--test_path', type=str, default='../datasets/TestDataset')
-    parser.add_argument('--save_dir', type=str, default='./runs/mean_teacher')
+    parser.add_argument('--save_dir', type=str, default='./runs/mean_teacher_indomain')
     parser.add_argument('--ema_decay', type=float, default=0.99)
     parser.add_argument('--consistency_weight', type=float, default=0.1)
     parser.add_argument('--ramp_epochs', type=int, default=5,
@@ -217,8 +230,13 @@ if __name__ == '__main__':
     print('mc_dropout:', opt.mc_dropout,
           'mc_T:', opt.mc_T,
           'uncertainty_drop_frac:', opt.uncertainty_drop_frac)
-    print('unlabeled_path:', opt.unlabeled_path)
-    print('NOTE: CVC-ColonDB is used unlabeled; treat it as seen for these runs.')
+    print('unlabeled_mode:', opt.unlabeled_mode,
+          'labeled_frac:', opt.labeled_frac)
+    if opt.unlabeled_mode == 'colondb':
+        print('unlabeled_path:', opt.unlabeled_path)
+        print('NOTE: CVC-ColonDB is used unlabeled; treat it as seen for these runs.')
+    else:
+        print('NOTE: in-domain split of TrainDataset; CVC-ColonDB stays held-out.')
 
     run_dir = os.path.join(opt.save_dir, f'seed{opt.seed}')
     os.makedirs(run_dir, exist_ok=True)
@@ -246,12 +264,27 @@ if __name__ == '__main__':
 
     optimizer = torch.optim.AdamW(student.parameters(), lr=opt.lr, weight_decay=1e-4)
 
-    labeled_set = TrainDataset(
+    full_train = TrainDataset(
         os.path.join(opt.train_path, 'images'),
         os.path.join(opt.train_path, 'masks'),
         opt.trainsize,
     )
-    unlabeled_set = UnlabeledImageDataset(opt.unlabeled_path, opt.trainsize)
+    if opt.unlabeled_mode == 'indomain':
+        n = len(full_train)
+        perm = np.random.RandomState(opt.seed).permutation(n)
+        n_lab = int(round(n * opt.labeled_frac))
+        if n_lab < 1 or n_lab >= n:
+            raise ValueError(f'labeled_frac={opt.labeled_frac} leaves empty split (n={n})')
+        lab_idx = perm[:n_lab].tolist()
+        unl_idx = perm[n_lab:].tolist()
+        labeled_set = Subset(full_train, lab_idx)
+        unlabeled_set = UnlabeledImageDataset(
+            trainsize=opt.trainsize,
+            image_paths=[full_train.images[i] for i in unl_idx],
+        )
+    else:
+        labeled_set = full_train
+        unlabeled_set = UnlabeledImageDataset(opt.unlabeled_path, opt.trainsize)
     print(f'n_labeled={len(labeled_set)} n_unlabeled={len(unlabeled_set)}')
 
     labeled_loader = DataLoader(
@@ -263,10 +296,14 @@ if __name__ == '__main__':
         num_workers=4, pin_memory=True, drop_last=True,
     )
 
-    # ColonDB is seen (unlabeled) for these runs; still log its Dice for the report.
     datasets = ['CVC-300', 'CVC-ClinicDB', 'Kvasir', 'CVC-ColonDB', 'ETIS-LaribPolypDB']
     best = 0.0
-    title = 'Start Mean-Teacher + MC Dropout' if opt.mc_dropout else 'Start Mean-Teacher Training'
+    if opt.mc_dropout:
+        title = 'Start Mean-Teacher + MC Dropout'
+    elif opt.unlabeled_mode == 'indomain':
+        title = 'Start In-Domain Mean-Teacher Training'
+    else:
+        title = 'Start Mean-Teacher Training'
     print('#' * 20, title, '#' * 20)
 
     for epoch in range(1, opt.epoch + 1):
