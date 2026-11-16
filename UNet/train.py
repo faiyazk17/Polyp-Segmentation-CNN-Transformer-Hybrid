@@ -16,7 +16,7 @@ import torchvision.transforms as transforms
 
 
 class TrainDataset(torch.utils.data.Dataset):
-    def __init__(self, image_root, gt_root, trainsize=352):
+    def __init__(self, image_root, gt_root, trainsize=352, size_weights=None):
         self.trainsize = trainsize
         self.images = sorted(
             [os.path.join(image_root, f) for f in os.listdir(image_root)
@@ -27,6 +27,9 @@ class TrainDataset(torch.utils.data.Dataset):
              if f.lower().endswith(('.png', '.jpg'))]
         )
         assert len(self.images) == len(self.gts), 'image/mask count mismatch'
+        self.size_weights = size_weights
+        if self.size_weights is not None:
+            assert len(self.size_weights) == len(self.images)
         self.img_transform = transforms.Compose([
             transforms.Resize((trainsize, trainsize)),
             transforms.ToTensor(),
@@ -40,7 +43,11 @@ class TrainDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         image = Image.open(self.images[index]).convert('RGB')
         gt = Image.open(self.gts[index]).convert('L')
-        return self.img_transform(image), self.gt_transform(gt)
+        image_t = self.img_transform(image)
+        gt_t = self.gt_transform(gt)
+        if self.size_weights is None:
+            return image_t, gt_t
+        return image_t, gt_t, float(self.size_weights[index])
 
     def __len__(self):
         return len(self.images)
@@ -81,7 +88,7 @@ class TestDataset:
         return image, gt, name
 
 
-def structure_loss(pred, mask):
+def structure_loss(pred, mask, sample_weight=None):
     weit = 1 + 5 * torch.abs(F.avg_pool2d(mask, kernel_size=31, stride=1, padding=15) - mask)
     wbce = F.binary_cross_entropy_with_logits(pred, mask, reduction='none')
     wbce = (weit * wbce).sum(dim=(2, 3)) / weit.sum(dim=(2, 3))
@@ -89,7 +96,11 @@ def structure_loss(pred, mask):
     inter = ((pred * mask) * weit).sum(dim=(2, 3))
     union = ((pred + mask) * weit).sum(dim=(2, 3))
     wiou = 1 - (inter + 1) / (union - inter + 1)
-    return (wbce + wiou).mean()
+    per = wbce + wiou
+    if sample_weight is None:
+        return per.mean()
+    w = sample_weight.view(-1).float()
+    return (per * w).mean()
 
 
 @torch.no_grad()
@@ -122,7 +133,13 @@ def train_one_epoch(model, loader, optimizer, epoch, opt):
     size_rates = [0.75, 1, 1.25]
     loss_meter = 0.0
     n_steps = 0
-    for i, (images, gts) in enumerate(loader, start=1):
+    for i, batch in enumerate(loader, start=1):
+        if len(batch) == 3:
+            images, gts, sample_w = batch
+            sample_w = sample_w.cuda()
+        else:
+            images, gts = batch
+            sample_w = None
         for rate in size_rates:
             optimizer.zero_grad()
             images_g = Variable(images).cuda()
@@ -134,7 +151,7 @@ def train_one_epoch(model, loader, optimizer, epoch, opt):
                 gts_g = F.interpolate(gts_g, size=(trainsize, trainsize),
                                       mode='bilinear', align_corners=True)
             pred = model(images_g)
-            loss = structure_loss(pred, gts_g)
+            loss = structure_loss(pred, gts_g, sample_weight=sample_w)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), opt.clip)
             optimizer.step()
@@ -160,11 +177,15 @@ if __name__ == '__main__':
     parser.add_argument('--save_dir', type=str, default='./runs')
     parser.add_argument('--oversample_small', action='store_true',
                         help='draw small-polyp images more often (component C1 only)')
+    parser.add_argument('--loss_reweight_small', action='store_true',
+                        help='upweight structure loss on small-polyp images (not sampler)')
     parser.add_argument('--small_threshold', type=int, default=20957,
                         help='polyp_area <= this counts as small')
     parser.add_argument('--small_weight', type=float, default=3.0,
-                        help='sampling weight for small images; large images stay at 1')
+                        help='weight for small images in sampler or loss; large stay at 1')
     opt = parser.parse_args()
+    if opt.oversample_small and opt.loss_reweight_small:
+        raise ValueError('use only one of --oversample_small or --loss_reweight_small')
 
     random.seed(opt.seed)
     np.random.seed(opt.seed)
@@ -173,6 +194,8 @@ if __name__ == '__main__':
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     print('seed:', opt.seed)
+    print('oversample_small:', opt.oversample_small,
+          'loss_reweight_small:', opt.loss_reweight_small)
 
     run_dir = os.path.join(opt.save_dir, f'seed{opt.seed}')
     os.makedirs(run_dir, exist_ok=True)
@@ -193,10 +216,26 @@ if __name__ == '__main__':
     print(f'params (M): {n_params:.3f}')
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=opt.lr, weight_decay=1e-4)
+
+    # Build a temporary set to compute small/large flags from raw mask area.
+    probe = TrainDataset(
+        os.path.join(opt.train_path, 'images'),
+        os.path.join(opt.train_path, 'masks'),
+        opt.trainsize,
+    )
+    size_weights = None
+    if opt.loss_reweight_small:
+        flags = probe.small_mask_flags(opt.small_threshold)
+        size_weights = [opt.small_weight if is_small else 1.0 for is_small in flags]
+        n_small = sum(flags)
+        print(f'loss_reweight_small: threshold={opt.small_threshold} '
+              f'small_weight={opt.small_weight} n_small={n_small} n_large={len(flags) - n_small}')
+
     train_set = TrainDataset(
         os.path.join(opt.train_path, 'images'),
         os.path.join(opt.train_path, 'masks'),
         opt.trainsize,
+        size_weights=size_weights,
     )
     sampler = None
     shuffle = True
@@ -215,7 +254,8 @@ if __name__ == '__main__':
 
     datasets = ['CVC-300', 'CVC-ClinicDB', 'Kvasir', 'CVC-ColonDB', 'ETIS-LaribPolypDB']
     best = 0.0
-    print('#' * 20, 'Start Training', '#' * 20)
+    title = 'Start Loss-Reweight Training' if opt.loss_reweight_small else 'Start Training'
+    print('#' * 20, title, '#' * 20)
 
     for epoch in range(1, opt.epoch + 1):
         train_one_epoch(model, train_loader, optimizer, epoch, opt)
