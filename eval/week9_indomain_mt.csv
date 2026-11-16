@@ -1,0 +1,16 @@
+model,seed,threshold,dataset,n_all,n_small,n_large,dice_all,dice_small,dice_large
+unet_mean_teacher_indomain,0,20957,CVC-300,60,57,3,0.8981,0.8977,0.9065
+unet_mean_teacher_indomain,0,20957,CVC-ClinicDB,62,54,8,0.8674,0.8930,0.6950
+unet_mean_teacher_indomain,0,20957,Kvasir,100,32,68,0.8859,0.8558,0.9001
+unet_mean_teacher_indomain,0,20957,CVC-ColonDB,380,278,102,0.7288,0.7652,0.6297
+unet_mean_teacher_indomain,0,20957,ETIS-LaribPolypDB,196,87,109,0.6894,0.5315,0.8155
+unet_mean_teacher_indomain,1,20957,CVC-300,60,57,3,0.8833,0.8813,0.9221
+unet_mean_teacher_indomain,1,20957,CVC-ClinicDB,62,54,8,0.8683,0.8699,0.8575
+unet_mean_teacher_indomain,1,20957,Kvasir,100,32,68,0.8906,0.8591,0.9054
+unet_mean_teacher_indomain,1,20957,CVC-ColonDB,380,278,102,0.7170,0.7347,0.6689
+unet_mean_teacher_indomain,1,20957,ETIS-LaribPolypDB,196,87,109,0.6103,0.4677,0.7241
+unet_mean_teacher_indomain,2,20957,CVC-300,60,57,3,0.8741,0.8713,0.9266
+unet_mean_teacher_indomain,2,20957,CVC-ClinicDB,62,54,8,0.8668,0.8832,0.7558
+unet_mean_teacher_indomain,2,20957,Kvasir,100,32,68,0.8869,0.8447,0.9068
+unet_mean_teacher_indomain,2,20957,CVC-ColonDB,380,278,102,0.7108,0.7320,0.6530
+unet_mean_teacher_indomain,2,20957,ETIS-LaribPolypDB,196,87,109,0.5799,0.3832,0.7369
