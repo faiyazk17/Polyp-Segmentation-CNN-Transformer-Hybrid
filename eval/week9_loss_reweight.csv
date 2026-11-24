@@ -1,0 +1,16 @@
+model,seed,threshold,dataset,n_all,n_small,n_large,dice_all,dice_small,dice_large
+unet_loss_reweight,0,20957,CVC-300,60,57,3,0.8978,0.8950,0.9522
+unet_loss_reweight,0,20957,CVC-ClinicDB,62,54,8,0.9202,0.9211,0.9139
+unet_loss_reweight,0,20957,Kvasir,100,32,68,0.9094,0.8866,0.9201
+unet_loss_reweight,0,20957,CVC-ColonDB,380,278,102,0.7588,0.7667,0.7373
+unet_loss_reweight,0,20957,ETIS-LaribPolypDB,196,87,109,0.7031,0.5791,0.8021
+unet_loss_reweight,1,20957,CVC-300,60,57,3,0.9004,0.8972,0.9602
+unet_loss_reweight,1,20957,CVC-ClinicDB,62,54,8,0.9159,0.9141,0.9283
+unet_loss_reweight,1,20957,Kvasir,100,32,68,0.8992,0.8696,0.9132
+unet_loss_reweight,1,20957,CVC-ColonDB,380,278,102,0.7612,0.7949,0.6694
+unet_loss_reweight,1,20957,ETIS-LaribPolypDB,196,87,109,0.6819,0.5407,0.7945
+unet_loss_reweight,2,20957,CVC-300,60,57,3,0.8952,0.8921,0.9532
+unet_loss_reweight,2,20957,CVC-ClinicDB,62,54,8,0.9277,0.9237,0.9549
+unet_loss_reweight,2,20957,Kvasir,100,32,68,0.9017,0.8586,0.9220
+unet_loss_reweight,2,20957,CVC-ColonDB,380,278,102,0.7465,0.7637,0.6997
+unet_loss_reweight,2,20957,ETIS-LaribPolypDB,196,87,109,0.6721,0.5421,0.7759
